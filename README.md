@@ -1,1 +1,5 @@
-Participants in [ARENA Virtual](https://www.arena.education/) should clone this repo into their personal machine, and work on solutions there. More details can be found in the Notion page, which you should all have access to.
+# ARENA V1 - Joseph Bloom 
+
+I'm participating in ARENA [ARENA Virtual](https://www.arena.education/) and posting solutions here. 
+
+I may also put part of my ARENA work in a seperate repo which I will link here once it's public. 
