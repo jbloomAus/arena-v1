@@ -15,8 +15,8 @@ from d3 import ResNet34, copy_weights
 data_dir = "./w0d3/hymenoptera_data/"
 
 learning_rate = 0.001
-epochs = 10
-batch_size = 16
+epochs = 1
+batch_size = 8
 num_classes = 2
 num_workers = multiprocessing.cpu_count() - 1
 device = "cpu"
@@ -53,20 +53,23 @@ def train_model(model,
 
             preds = model(x)
             training_loss = criterion(preds, y)
+            train_corrects = torch.sum(preds.argmax(dim=1) == y.data)
+
+            wandb.log({"train_loss": training_loss})
+            wandb.log({"train_acc": train_corrects / y.shape[0] })
 
             training_loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
             running_loss += training_loss.item() * x.size(0)  # scale to n in batch
-            running_corrects += torch.sum(preds.argmax(dim=1) == y.data)
+            running_corrects += train_corrects
 
         epoch_loss = running_loss / len(trainloader.dataset)
         epoch_acc = running_corrects.double() / len(trainloader.dataset)
 
         print('{}: training: Loss: {:.4f} Acc: {:.4f}'.format(epoch, epoch_loss, epoch_acc))
-        wandb.log({"train_loss": epoch_loss})
-        wandb.log({"train_acc": epoch_acc})
+
 
         model.eval()
         running_loss = 0.0
@@ -80,16 +83,19 @@ def train_model(model,
 
             preds = model(x)
             test_loss = criterion(preds, y)
+            test_corrects = torch.sum(preds.argmax(dim=1) == y.data)
 
             running_loss += test_loss.item() * x.size(0)  # scale to n in batch
-            running_corrects += torch.sum(preds.argmax(dim=1) == y.data)
+            running_corrects += test_corrects
 
-        epoch_loss = running_loss / len(trainloader.dataset)
-        epoch_acc = running_corrects.double() / len(trainloader.dataset)
+            wandb.log({"test_loss": test_loss})
+            wandb.log({"test_acc": test_corrects / y.shape[0]})
+
+        epoch_loss = running_loss / len(testloader.dataset)
+        epoch_acc = running_corrects.double() / len(testloader.dataset)
 
         print('{}: test: Loss: {:.4f} Acc: {:.4f}'.format(epoch, epoch_loss, epoch_acc))
-        wandb.log({"test_loss": epoch_loss})
-        wandb.log({"test_acc": epoch_acc})
+        
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
@@ -97,34 +103,45 @@ def train_model(model,
 
     return model
 
-
 if __name__ == '__main__':
 
 
-    wandb.init(project="Antman-and-the-Wasp--Finetunemania")
+    wandb.init(
+        project="Antman-and-the-Wasp--Finetunemania - Fixed",
+        name = "Pretty Graphs",
+        )
 
 
     print("Initializing model and copy weights...")
     myresnet = ResNet34()
     myresnet = copy_weights(myresnet, pretrained_resnet=resnet34(weights="DEFAULT"))
     myresnet.linear = Linear(512, num_classes)
+    input_size = 244
 
-    transform = transforms.Compose([
-        transforms.ToTensor(),  #
-        transforms.Resize((224, 224)),  #
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  #
+    transform_train = transforms.Compose([
+        transforms.RandomResizedCrop(input_size),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    transform_val = transforms.Compose([
+        transforms.Resize(input_size),
+        transforms.CenterCrop(input_size),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
     print("Initializing Datasets and Dataloaders...")
     traindata = datasets.ImageFolder(os.path.join(data_dir, "train"),
-                                    transform=transform)
+                                    transform=transform_train)
     trainloader = torch.utils.data.DataLoader(traindata,
                                             batch_size=batch_size,
                                             shuffle=True,
                                             num_workers=num_workers)
 
     testdata = datasets.ImageFolder(os.path.join(data_dir, "val"),
-                                    transform=transform)
+                                    transform=transform_val)
     testloader = torch.utils.data.DataLoader(testdata,
                                             batch_size=batch_size,
                                             shuffle=False,
@@ -142,7 +159,6 @@ if __name__ == '__main__':
         else:
             param.requires_grad = False
 
-    params_to_update = myresnet.parameters()
     print("Params to learn:")
     params_to_update = []
     for name, param in myresnet.named_parameters():
